@@ -1,0 +1,25 @@
+{
+  "users": [
+    {
+      "id": "71ae8f89-6e40-42c3-9ecc-3230ec55f365",
+      "name": "Shivam Agrawal",
+      "email": "shivam.agrawal1501@gmail.com",
+      "passwordHash": "$2a$12$T.r0WsXxwCwrKOi1kKjZ1OROiYnT7bmZEAfvaotObt7UvyHFfNp3O",
+      "createdAt": "2026-02-12T13:18:21.689Z"
+    }
+  ],
+  "sessions": {
+    "103000b9-bc18-4aca-bc36-571ff31ac65a": {
+      "userId": "71ae8f89-6e40-42c3-9ecc-3230ec55f365",
+      "createdAt": "2026-02-12T13:18:21.689Z"
+    },
+    "ff6ab153-e0ef-46ec-95a0-94ac7b0615c9": {
+      "userId": "71ae8f89-6e40-42c3-9ecc-3230ec55f365",
+      "createdAt": "2026-02-12T13:22:09.268Z"
+    },
+    "c0144d4e-7669-448c-b830-e9212a307607": {
+      "userId": "71ae8f89-6e40-42c3-9ecc-3230ec55f365",
+      "createdAt": "2026-02-12T14:58:07.954Z"
+    }
+  }
+}

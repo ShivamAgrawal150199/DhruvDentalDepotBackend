@@ -66,6 +66,6 @@ Body:
 Returns all orders for the logged-in user.
 
 ## Notes
-- Users, sessions, and orders are stored in `backend/data/auth-db.json`.
+- Users, sessions, and orders are stored in SQLite DB: `backend/data/app.db`.
 - Passwords are hashed with `bcryptjs`.
 - Cookie is HTTP-only (`ddd_sid`).

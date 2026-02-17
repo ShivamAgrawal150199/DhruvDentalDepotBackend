@@ -105,6 +105,18 @@ async function initDb() {
       FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
     )
   `);
+
+  await runAsync(`
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      image TEXT NOT NULL,
+      note TEXT,
+      fit TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
 }
 
 function setSessionCookie(res, sessionId) {
@@ -149,8 +161,136 @@ async function getUserFromSession(req) {
   );
 }
 
+async function requireUser(req, res) {
+  const user = await getUserFromSession(req);
+  if (!user) {
+    res.status(401).json({ error: "not authenticated" });
+    return null;
+  }
+  return user;
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/products", async (_req, res) => {
+  try {
+    const products = await allAsync(
+      `
+        SELECT id, title, category, image, COALESCE(note, '') AS note, COALESCE(fit, '') AS fit, created_at
+        FROM products
+        ORDER BY created_at DESC
+      `
+    );
+    return res.json({ products });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+app.post("/products", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+
+    const title = String(req.body?.title || "").trim();
+    const category = String(req.body?.category || "").trim();
+    const image = String(req.body?.image || "").trim();
+    const note = String(req.body?.note || "").trim();
+    const fit = String(req.body?.fit || "").trim();
+
+    if (!title || !category || !image) {
+      return res.status(400).json({ error: "title, category, and image are required" });
+    }
+
+    const product = {
+      id: `prd-${crypto.randomUUID()}`,
+      title,
+      category,
+      image,
+      note,
+      fit,
+      createdAt: new Date().toISOString()
+    };
+
+    await runAsync(
+      `
+        INSERT INTO products (id, title, category, image, note, fit, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [product.id, product.title, product.category, product.image, product.note, product.fit, product.createdAt]
+    );
+
+    return res.status(201).json({ product });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+app.put("/products/:id", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+
+    const id = String(req.params.id || "").trim();
+    const title = String(req.body?.title || "").trim();
+    const category = String(req.body?.category || "").trim();
+    const image = String(req.body?.image || "").trim();
+    const note = String(req.body?.note || "").trim();
+    const fit = String(req.body?.fit || "").trim();
+
+    if (!id || !title || !category || !image) {
+      return res.status(400).json({ error: "id, title, category, and image are required" });
+    }
+
+    const result = await runAsync(
+      `
+        UPDATE products
+        SET title = ?, category = ?, image = ?, note = ?, fit = ?
+        WHERE id = ?
+      `,
+      [title, category, image, note, fit, id]
+    );
+
+    if (!result.changes) {
+      return res.status(404).json({ error: "product not found" });
+    }
+
+    const product = await getAsync(
+      `
+        SELECT id, title, category, image, COALESCE(note, '') AS note, COALESCE(fit, '') AS fit, created_at
+        FROM products
+        WHERE id = ?
+      `,
+      [id]
+    );
+
+    return res.json({ product });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+app.delete("/products/:id", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+
+    const id = String(req.params.id || "").trim();
+    if (!id) {
+      return res.status(400).json({ error: "id is required" });
+    }
+
+    const result = await runAsync("DELETE FROM products WHERE id = ?", [id]);
+    if (!result.changes) {
+      return res.status(404).json({ error: "product not found" });
+    }
+
+    return res.json({ ok: true });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
 });
 
 app.post("/auth/register", async (req, res) => {

@@ -65,6 +65,18 @@ Body:
 ### `GET /orders/me`
 Returns all orders for the logged-in user.
 
+### `GET /products`
+Public endpoint to fetch all products for inventory pages.
+
+### `POST /products`
+Authenticated endpoint to add a product.
+
+### `PUT /products/:id`
+Authenticated endpoint to update a product.
+
+### `DELETE /products/:id`
+Authenticated endpoint to delete a product.
+
 ## Notes
 - Users, sessions, and orders are stored in SQLite DB: `backend/data/app.db`.
 - Passwords are hashed with `bcryptjs`.

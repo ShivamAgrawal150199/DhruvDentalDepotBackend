@@ -18,7 +18,20 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: ["http://127.0.0.1:5500", "http://localhost:5500", "http://localhost:3000"],
+    origin: (origin, callback) => {
+      // Allow requests from localhost/127.0.0.1 on any port during development
+      if (!origin || origin.includes("localhost") || origin.includes("127.0.0.1")) {
+        callback(null, true);
+      }
+      // Allow requests from the production domain
+      else if (origin === "https://ddent.co.in") {
+        callback(null, true);
+      }
+      // Reject other origins
+      else {
+        callback(new Error("CORS not allowed"), false);
+      }
+    },
     credentials: true
   })
 );

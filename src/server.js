@@ -31,8 +31,12 @@ app.use(
       ) {
         callback(null, true);
       }
-      // Allow requests from the production domain
-      else if (origin === "https://ddent.co.in") {
+      // Allow requests from production domains
+      else if (
+        origin === "https://ddent.co.in" ||
+        origin === "https://www.ddent.co.in" ||
+        origin === "https://dhruv-dental-depot.vercel.app"
+      ) {
         callback(null, true);
       }
       // Reject other origins (no error to avoid noisy logs)
@@ -143,8 +147,8 @@ async function initDb() {
 function setSessionCookie(res, sessionId) {
   res.cookie(COOKIE_NAME, sessionId, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false,
+    sameSite: "none",
+    secure: true,
     maxAge: 1000 * 60 * 60 * 24 * 7
   });
 }
@@ -152,8 +156,8 @@ function setSessionCookie(res, sessionId) {
 function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: false
+    sameSite: "none",
+    secure: true
   });
 }
 

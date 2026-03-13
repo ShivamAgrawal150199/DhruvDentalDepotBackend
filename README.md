@@ -78,6 +78,8 @@ Authenticated endpoint to update a product.
 Authenticated endpoint to delete a product.
 
 ## Notes
-- Users, sessions, and orders are stored in SQLite DB: `backend/data/app.db`.
+- Local uses SQLite: `backend/data/app.db`.
+- Production (when `DATABASE_URL` is set) uses Postgres.
+- Health check shows current DB: `GET /health` → `{ ok: true, db: "sqlite" | "postgres" }`.
 - Passwords are hashed with `bcryptjs`.
 - Cookie is HTTP-only (`ddd_sid`).

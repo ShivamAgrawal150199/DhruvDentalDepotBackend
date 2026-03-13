@@ -23,13 +23,21 @@ app.use(
       if (!origin || origin.includes("localhost") || origin.includes("127.0.0.1")) {
         callback(null, true);
       }
+      // Allow requests from local LAN (e.g. testing on phone)
+      else if (
+        /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin) ||
+        /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin) ||
+        /^http:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}(:\d+)?$/.test(origin)
+      ) {
+        callback(null, true);
+      }
       // Allow requests from the production domain
       else if (origin === "https://ddent.co.in") {
         callback(null, true);
       }
-      // Reject other origins
+      // Reject other origins (no error to avoid noisy logs)
       else {
-        callback(new Error("CORS not allowed"), false);
+        callback(null, false);
       }
     },
     credentials: true

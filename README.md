@@ -1,4 +1,4 @@
-# Auth Backend (Node.js + Express)
+﻿# Auth Backend (Node.js + Express)
 
 ## Setup
 1. Open terminal in `backend`
@@ -77,9 +77,28 @@ Authenticated endpoint to update a product.
 ### `DELETE /products/:id`
 Authenticated endpoint to delete a product.
 
+### `GET /wishlist`
+Returns wishlist items for the logged-in user.
+
+### `POST /wishlist`
+Adds a product to the wishlist.
+Body:
+```json
+{
+  "productId": "prd-1"
+}
+```
+
+### `DELETE /wishlist/:productId`
+Removes a product from the wishlist.
+
 ## Notes
 - Local uses SQLite: `backend/data/app.db`.
 - Production (when `DATABASE_URL` is set) uses Postgres.
-- Health check shows current DB: `GET /health` → `{ ok: true, db: "sqlite" | "postgres" }`.
+- Health check shows current DB: `GET /health` -> `{ ok: true, db: "sqlite" | "postgres" }`.
+- After adding wishlist support, restart local server or redeploy production so the wishlist table is created.
 - Passwords are hashed with `bcryptjs`.
 - Cookie is HTTP-only (`ddd_sid`).
+
+
+

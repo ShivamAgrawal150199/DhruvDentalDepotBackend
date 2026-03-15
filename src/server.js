@@ -14,8 +14,13 @@ const DB_FILE = path.join(DATA_DIR, "app.db");
 const COOKIE_NAME = "ddd_sid";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const USE_POSTGRES = Boolean(DATABASE_URL);
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "";
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(express.json());
 app.use(cookieParser());
@@ -310,6 +315,55 @@ function clearSessionCookie(res) {
   });
 }
 
+function getCookieOptions() {
+  const isProd = USE_POSTGRES || process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    sameSite: isProd ? "none" : "lax",
+    secure: isProd,
+    maxAge: 1000 * 60 * 10
+  };
+}
+
+function getFrontendOrigin(req) {
+  if (FRONTEND_ORIGIN) return FRONTEND_ORIGIN;
+  const ref = req.get("referer");
+  if (ref) {
+    try {
+      const parsed = new URL(ref);
+      return parsed.origin;
+    } catch {
+      // ignore
+    }
+  }
+  return USE_POSTGRES ? "https://ddent.co.in" : "http://localhost:5500";
+}
+
+function sanitizeNextUrl(nextUrl, origin) {
+  if (!nextUrl) return `${origin}/index.html`;
+
+  if (/^https?:\/\//i.test(nextUrl)) {
+    try {
+      const parsed = new URL(nextUrl);
+      return parsed.origin === origin ? parsed.toString() : `${origin}/index.html`;
+    } catch {
+      return `${origin}/index.html`;
+    }
+  }
+
+  if (nextUrl.startsWith("/")) {
+    return `${origin}${nextUrl}`;
+  }
+
+  return `${origin}/${nextUrl}`;
+}
+
+function getGoogleRedirectUri(req) {
+  if (GOOGLE_REDIRECT_URI) return GOOGLE_REDIRECT_URI;
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  return `${baseUrl}/auth/google/callback`;
+}
+
 function sanitizeUser(user) {
   return {
     id: user.id,
@@ -568,6 +622,137 @@ app.post("/auth/login", async (req, res) => {
     return res.json({ user: sanitizeUser(user) });
   } catch (_error) {
     return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+app.get("/auth/google", async (req, res) => {
+  try {
+    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+      return res.status(500).send("Google SSO is not configured.");
+    }
+
+    const next = String(req.query?.next || "");
+    const origin = getFrontendOrigin(req);
+    const state = crypto.randomUUID();
+
+    res.cookie("ddd_oauth_state", state, getCookieOptions());
+    res.cookie("ddd_oauth_next", next, getCookieOptions());
+    res.cookie("ddd_oauth_origin", origin, getCookieOptions());
+
+    const redirectUri = getGoogleRedirectUri(req);
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state
+    });
+
+    return res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+  } catch (_error) {
+    return res.status(500).send("Failed to start Google login.");
+  }
+});
+
+app.get("/auth/google/callback", async (req, res) => {
+  try {
+    const code = String(req.query?.code || "");
+    const state = String(req.query?.state || "");
+    const storedState = req.cookies["ddd_oauth_state"] || "";
+    const next = req.cookies["ddd_oauth_next"] || "";
+    const origin = req.cookies["ddd_oauth_origin"] || getFrontendOrigin(req);
+
+    res.clearCookie("ddd_oauth_state", getCookieOptions());
+    res.clearCookie("ddd_oauth_next", getCookieOptions());
+    res.clearCookie("ddd_oauth_origin", getCookieOptions());
+
+    if (!code || !state || !storedState || state !== storedState) {
+      return res.status(400).send("Invalid OAuth state.");
+    }
+
+    const redirectUri = getGoogleRedirectUri(req);
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code"
+      })
+    });
+
+    if (!tokenRes.ok) {
+      return res.status(401).send("Failed to exchange Google token.");
+    }
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+    if (!accessToken) {
+      return res.status(401).send("Missing access token.");
+    }
+
+    const profileRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (!profileRes.ok) {
+      return res.status(401).send("Failed to fetch Google profile.");
+    }
+
+    const profile = await profileRes.json();
+    const email = String(profile.email || "").trim().toLowerCase();
+    const name = String(profile.name || "Google User").trim();
+
+    if (!email) {
+      return res.status(400).send("Google account missing email.");
+    }
+
+    let user = await getAsync(
+      `
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE email = ?
+        LIMIT 1
+      `,
+      [email]
+    );
+
+    if (!user) {
+      const userId = crypto.randomUUID();
+      const passwordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+      const createdAt = new Date().toISOString();
+      await runAsync(
+        `
+          INSERT INTO users (id, name, email, password_hash, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        [userId, name || "Google User", email, passwordHash, createdAt]
+      );
+
+      user = {
+        id: userId,
+        name: name || "Google User",
+        email,
+        created_at: createdAt
+      };
+    }
+
+    const sessionId = crypto.randomUUID();
+    await runAsync(
+      `
+        INSERT INTO sessions (id, user_id, created_at)
+        VALUES (?, ?, ?)
+      `,
+      [sessionId, user.id, new Date().toISOString()]
+    );
+
+    setSessionCookie(res, sessionId);
+    const target = sanitizeNextUrl(next, origin);
+    return res.redirect(target);
+  } catch (_error) {
+    return res.status(500).send("Google login failed.");
   }
 });
 

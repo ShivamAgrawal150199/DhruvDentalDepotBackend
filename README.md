@@ -97,6 +97,8 @@ Removes a product from the wishlist.
 - Production (when `DATABASE_URL` is set) uses Postgres.
 - Health check shows current DB: `GET /health` -> `{ ok: true, db: "sqlite" | "postgres" }`.
 - After adding wishlist support, restart local server or redeploy production so the wishlist table is created.
+- Google SSO requires env vars: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
+- Optional: set `GOOGLE_REDIRECT_URI` (defaults to current host) and `FRONTEND_ORIGIN` for safer redirects.
 - Passwords are hashed with `bcryptjs`.
 - Cookie is HTTP-only (`ddd_sid`).
 

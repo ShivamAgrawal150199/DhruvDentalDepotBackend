@@ -782,6 +782,33 @@ app.get("/auth/me", async (req, res) => {
   }
 });
 
+app.put("/auth/profile", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+
+    const name = String(req.body?.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ error: "name is required" });
+    }
+
+    await runAsync("UPDATE users SET name = ? WHERE id = ?", [name, user.id]);
+    const updated = await getAsync(
+      `
+        SELECT id, name, email, created_at
+        FROM users
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [user.id]
+    );
+
+    return res.json({ user: sanitizeUser(updated) });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
 app.get("/wishlist", async (req, res) => {
   try {
     const user = await getUserFromSession(req);

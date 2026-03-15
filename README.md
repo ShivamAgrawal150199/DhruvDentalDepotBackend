@@ -36,6 +36,15 @@ No body. Clears login session cookie.
 ### `GET /auth/me`
 Returns logged-in user from session cookie.
 
+### `PUT /auth/profile`
+Updates the logged-in user's profile (name only).
+Body:
+```json
+{
+  "name": "New Name"
+}
+```
+
 ### `POST /orders`
 Creates an order for the logged-in user.
 Body:

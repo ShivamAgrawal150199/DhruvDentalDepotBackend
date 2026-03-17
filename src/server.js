@@ -18,6 +18,7 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "";
 const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "";
+const ALLOWED_PROFESSIONS = ["dentist", "dealer", "student", "universities supplier"];
 
 const app = express();
 app.set("trust proxy", 1);
@@ -160,6 +161,7 @@ async function initDb() {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           email TEXT NOT NULL UNIQUE,
+          profession TEXT,
           password_hash TEXT NOT NULL,
           created_at TEXT NOT NULL
         )
@@ -228,6 +230,7 @@ async function initDb() {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           email TEXT NOT NULL UNIQUE,
+          profession TEXT,
           password_hash TEXT NOT NULL,
           created_at TEXT NOT NULL
         )
@@ -293,6 +296,16 @@ async function initDb() {
 
   for (const statement of schemaSql) {
     await runAsync(statement);
+  }
+
+  if (USE_POSTGRES) {
+    await runAsync("ALTER TABLE users ADD COLUMN IF NOT EXISTS profession TEXT");
+  } else {
+    try {
+      await runAsync("ALTER TABLE users ADD COLUMN profession TEXT");
+    } catch (_error) {
+      // Column likely already exists.
+    }
   }
 }
 
@@ -369,6 +382,7 @@ function sanitizeUser(user) {
     id: user.id,
     name: user.name,
     email: user.email,
+    profession: user.profession || "",
     createdAt: user.created_at
   };
 }
@@ -379,7 +393,7 @@ async function getUserFromSession(req) {
 
   return getAsync(
     `
-      SELECT u.id, u.name, u.email, u.created_at
+      SELECT u.id, u.name, u.email, u.profession, u.created_at
       FROM sessions s
       INNER JOIN users u ON u.id = s.user_id
       WHERE s.id = ?
@@ -531,9 +545,13 @@ app.post("/auth/register", async (req, res) => {
       .trim()
       .toLowerCase();
     const password = String(req.body?.password || "");
+    const profession = String(req.body?.profession || "").trim().toLowerCase();
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email, and password are required" });
+    }
+    if (profession && !ALLOWED_PROFESSIONS.includes(profession)) {
+      return res.status(400).json({ error: "invalid profession" });
     }
 
     const existing = await getAsync("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
@@ -551,10 +569,10 @@ app.post("/auth/register", async (req, res) => {
 
     await runAsync(
       `
-        INSERT INTO users (id, name, email, password_hash, created_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO users (id, name, email, profession, password_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
       `,
-      [user.id, user.name, user.email, user.passwordHash, user.createdAt]
+      [user.id, user.name, user.email, profession || null, user.passwordHash, user.createdAt]
     );
 
     const sessionId = crypto.randomUUID();
@@ -572,6 +590,7 @@ app.post("/auth/register", async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
+        profession: profession || "",
         createdAt: user.createdAt
       }
     });
@@ -593,7 +612,7 @@ app.post("/auth/login", async (req, res) => {
 
     const user = await getAsync(
       `
-        SELECT id, name, email, password_hash, created_at
+        SELECT id, name, email, profession, password_hash, created_at
         FROM users
         WHERE email = ?
         LIMIT 1
@@ -711,7 +730,7 @@ app.get("/auth/google/callback", async (req, res) => {
 
     let user = await getAsync(
       `
-        SELECT id, name, email, created_at
+        SELECT id, name, email, profession, created_at
         FROM users
         WHERE email = ?
         LIMIT 1
@@ -725,16 +744,17 @@ app.get("/auth/google/callback", async (req, res) => {
       const createdAt = new Date().toISOString();
       await runAsync(
         `
-          INSERT INTO users (id, name, email, password_hash, created_at)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO users (id, name, email, profession, password_hash, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
         `,
-        [userId, name || "Google User", email, passwordHash, createdAt]
+        [userId, name || "Google User", email, null, passwordHash, createdAt]
       );
 
       user = {
         id: userId,
         name: name || "Google User",
         email,
+        profession: "",
         created_at: createdAt
       };
     }
@@ -788,14 +808,22 @@ app.put("/auth/profile", async (req, res) => {
     if (!user) return;
 
     const name = String(req.body?.name || "").trim();
+    const profession = String(req.body?.profession || "").trim().toLowerCase();
     if (!name) {
       return res.status(400).json({ error: "name is required" });
     }
+    if (profession && !ALLOWED_PROFESSIONS.includes(profession)) {
+      return res.status(400).json({ error: "invalid profession" });
+    }
 
-    await runAsync("UPDATE users SET name = ? WHERE id = ?", [name, user.id]);
+    await runAsync("UPDATE users SET name = ?, profession = ? WHERE id = ?", [
+      name,
+      profession || null,
+      user.id
+    ]);
     const updated = await getAsync(
       `
-        SELECT id, name, email, created_at
+        SELECT id, name, email, profession, created_at
         FROM users
         WHERE id = ?
         LIMIT 1

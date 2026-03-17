@@ -41,7 +41,8 @@ Updates the logged-in user's profile (name only).
 Body:
 ```json
 {
-  "name": "New Name"
+  "name": "New Name",
+  "profession": "dentist"
 }
 ```
 

@@ -42,6 +42,8 @@ Body:
 ```json
 {
   "name": "New Name",
+  "phone": "9999999999",
+  "city": "Varanasi",
   "profession": "dentist"
 }
 ```

@@ -162,6 +162,8 @@ async function initDb() {
           name TEXT NOT NULL,
           email TEXT NOT NULL UNIQUE,
           profession TEXT,
+          phone TEXT,
+          city TEXT,
           password_hash TEXT NOT NULL,
           created_at TEXT NOT NULL
         )
@@ -231,6 +233,8 @@ async function initDb() {
           name TEXT NOT NULL,
           email TEXT NOT NULL UNIQUE,
           profession TEXT,
+          phone TEXT,
+          city TEXT,
           password_hash TEXT NOT NULL,
           created_at TEXT NOT NULL
         )
@@ -300,12 +304,26 @@ async function initDb() {
 
   if (USE_POSTGRES) {
     await runAsync("ALTER TABLE users ADD COLUMN IF NOT EXISTS profession TEXT");
+    await runAsync("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
+    await runAsync("ALTER TABLE users ADD COLUMN IF NOT EXISTS city TEXT");
+    await runAsync("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users(phone)");
   } else {
     try {
       await runAsync("ALTER TABLE users ADD COLUMN profession TEXT");
     } catch (_error) {
       // Column likely already exists.
     }
+    try {
+      await runAsync("ALTER TABLE users ADD COLUMN phone TEXT");
+    } catch (_error) {
+      // Column likely already exists.
+    }
+    try {
+      await runAsync("ALTER TABLE users ADD COLUMN city TEXT");
+    } catch (_error) {
+      // Column likely already exists.
+    }
+    await runAsync("CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique ON users(phone)");
   }
 }
 
@@ -383,8 +401,17 @@ function sanitizeUser(user) {
     name: user.name,
     email: user.email,
     profession: user.profession || "",
+    phone: user.phone || "",
+    city: user.city || "",
     createdAt: user.created_at
   };
+}
+
+function normalizeIndiaPhone(phone) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 10) return digits;
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  return "";
 }
 
 async function getUserFromSession(req) {
@@ -393,7 +420,7 @@ async function getUserFromSession(req) {
 
   return getAsync(
     `
-      SELECT u.id, u.name, u.email, u.profession, u.created_at
+      SELECT u.id, u.name, u.email, u.profession, u.phone, u.city, u.created_at
       FROM sessions s
       INNER JOIN users u ON u.id = s.user_id
       WHERE s.id = ?
@@ -546,12 +573,22 @@ app.post("/auth/register", async (req, res) => {
       .toLowerCase();
     const password = String(req.body?.password || "");
     const profession = String(req.body?.profession || "").trim().toLowerCase();
+    const phone = normalizeIndiaPhone(req.body?.phone);
+    const city = String(req.body?.city || "").trim();
 
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email, and password are required" });
     }
     if (profession && !ALLOWED_PROFESSIONS.includes(profession)) {
       return res.status(400).json({ error: "invalid profession" });
+    }
+    if (phone) {
+      const existingPhone = await getAsync("SELECT id FROM users WHERE phone = ? LIMIT 1", [phone]);
+      if (existingPhone) {
+        return res.status(409).json({ error: "phone already registered" });
+      }
+    } else if (req.body?.phone) {
+      return res.status(400).json({ error: "phone must be a valid 10-digit number" });
     }
 
     const existing = await getAsync("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
@@ -569,10 +606,10 @@ app.post("/auth/register", async (req, res) => {
 
     await runAsync(
       `
-        INSERT INTO users (id, name, email, profession, password_hash, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, name, email, profession, phone, city, password_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      [user.id, user.name, user.email, profession || null, user.passwordHash, user.createdAt]
+      [user.id, user.name, user.email, profession || null, phone || null, city || null, user.passwordHash, user.createdAt]
     );
 
     const sessionId = crypto.randomUUID();
@@ -591,6 +628,8 @@ app.post("/auth/register", async (req, res) => {
         name: user.name,
         email: user.email,
         profession: profession || "",
+        phone: phone || "",
+        city: city || "",
         createdAt: user.createdAt
       }
     });
@@ -612,7 +651,7 @@ app.post("/auth/login", async (req, res) => {
 
     const user = await getAsync(
       `
-        SELECT id, name, email, profession, password_hash, created_at
+        SELECT id, name, email, profession, phone, city, password_hash, created_at
         FROM users
         WHERE email = ?
         LIMIT 1
@@ -730,7 +769,7 @@ app.get("/auth/google/callback", async (req, res) => {
 
     let user = await getAsync(
       `
-        SELECT id, name, email, profession, created_at
+        SELECT id, name, email, profession, phone, city, created_at
         FROM users
         WHERE email = ?
         LIMIT 1
@@ -744,10 +783,10 @@ app.get("/auth/google/callback", async (req, res) => {
       const createdAt = new Date().toISOString();
       await runAsync(
         `
-          INSERT INTO users (id, name, email, profession, password_hash, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO users (id, name, email, profession, phone, city, password_hash, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        [userId, name || "Google User", email, null, passwordHash, createdAt]
+        [userId, name || "Google User", email, null, null, null, passwordHash, createdAt]
       );
 
       user = {
@@ -755,6 +794,8 @@ app.get("/auth/google/callback", async (req, res) => {
         name: name || "Google User",
         email,
         profession: "",
+        phone: "",
+        city: "",
         created_at: createdAt
       };
     }
@@ -809,21 +850,38 @@ app.put("/auth/profile", async (req, res) => {
 
     const name = String(req.body?.name || "").trim();
     const profession = String(req.body?.profession || "").trim().toLowerCase();
+    const phone = normalizeIndiaPhone(req.body?.phone);
+    const city = String(req.body?.city || "").trim();
     if (!name) {
       return res.status(400).json({ error: "name is required" });
     }
     if (profession && !ALLOWED_PROFESSIONS.includes(profession)) {
       return res.status(400).json({ error: "invalid profession" });
     }
+    if (!phone) {
+      return res.status(400).json({ error: "phone must be a valid 10-digit number" });
+    }
+    if (!city) {
+      return res.status(400).json({ error: "city is required" });
+    }
+    const existingPhone = await getAsync(
+      "SELECT id FROM users WHERE phone = ? AND id != ? LIMIT 1",
+      [phone, user.id]
+    );
+    if (existingPhone) {
+      return res.status(409).json({ error: "phone already registered" });
+    }
 
-    await runAsync("UPDATE users SET name = ?, profession = ? WHERE id = ?", [
+    await runAsync("UPDATE users SET name = ?, profession = ?, phone = ?, city = ? WHERE id = ?", [
       name,
       profession || null,
+      phone,
+      city || null,
       user.id
     ]);
     const updated = await getAsync(
       `
-        SELECT id, name, email, profession, created_at
+        SELECT id, name, email, profession, phone, city, created_at
         FROM users
         WHERE id = ?
         LIMIT 1

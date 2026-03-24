@@ -895,6 +895,20 @@ app.put("/auth/profile", async (req, res) => {
   }
 });
 
+app.delete("/auth/me", async (req, res) => {
+  try {
+    const user = await requireUser(req, res);
+    if (!user) return;
+
+    await runAsync("DELETE FROM sessions WHERE user_id = ?", [user.id]);
+    await runAsync("DELETE FROM users WHERE id = ?", [user.id]);
+    clearSessionCookie(res);
+    return res.json({ ok: true });
+  } catch (_error) {
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
 app.get("/wishlist", async (req, res) => {
   try {
     const user = await getUserFromSession(req);

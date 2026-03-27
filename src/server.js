@@ -414,6 +414,11 @@ function normalizeIndiaPhone(phone) {
   return "";
 }
 
+function isValidEmail(email) {
+  const value = String(email || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 async function getUserFromSession(req) {
   const sessionId = req.cookies[COOKIE_NAME];
   if (!sessionId) return null;
@@ -579,6 +584,9 @@ app.post("/auth/register", async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({ error: "name, email, and password are required" });
     }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "invalid email" });
+    }
     if (profession && !ALLOWED_PROFESSIONS.includes(profession)) {
       return res.status(400).json({ error: "invalid profession" });
     }
@@ -648,6 +656,9 @@ app.post("/auth/login", async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({ error: "email and password are required" });
     }
+    if (!isValidEmail(email)) {
+      return res.status(400).json({ error: "invalid email" });
+    }
 
     const user = await getAsync(
       `
@@ -659,7 +670,7 @@ app.post("/auth/login", async (req, res) => {
       [email]
     );
     if (!user) {
-      return res.status(401).json({ error: "invalid credentials" });
+      return res.status(404).json({ error: "email not registered" });
     }
 
     const matches = await bcrypt.compare(password, user.password_hash);
